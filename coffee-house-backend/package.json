@@ -1,0 +1,101 @@
+{
+  "name": "coffee-house-backend",
+  "version": "2.0.0",
+  "description": "Backend API for Coffee House Restaurant - Multi-language support with coffee and dessert ordering system",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "dev:debug": "nodemon --inspect server.js",
+    "test": "jest --coverage --verbose",
+    "test:watch": "jest --watch",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{js,json,md}\"",
+    "seed": "node seed-data.js",
+    "seed:products": "node seed-products.js",
+    "seed:reviews": "node seed-reviews.js",
+    "seed:settings": "node seed-settings.js",
+    "clean": "rm -rf node_modules && rm -f package-lock.json",
+    "reset": "npm run clean && npm install",
+    "docker:build": "docker build -t coffee-house-backend .",
+    "docker:run": "docker run -p 5000:5000 --env-file .env coffee-house-backend"
+  },
+  "keywords": [
+    "coffee",
+    "restaurant",
+    "cafe",
+    "backend",
+    "api",
+    "nodejs",
+    "express",
+    "mongodb",
+    "multi-language",
+    "arabic-coffee",
+    "order-system",
+    "e-commerce"
+  ],
+  "author": "Coffee House Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/coffee-house-backend.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/coffee-house-backend/issues"
+  },
+  "homepage": "https://github.com/yourusername/coffee-house-backend#readme",
+  "engines": {
+    "node": ">=14.0.0",
+    "npm": ">=6.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^7.0.0",
+    "joi": "^17.11.0",
+    "mongodb-memory-server": "^11.0.0",
+    "mongoose": "^8.0.0",
+    "morgan": "^1.10.0",
+    "nodemailer": "^6.10.1",
+    "rate-limiter-flexible": "^5.0.5",
+    "validator": "^13.11.0",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.54.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.29.0",
+    "faker": "^5.5.3",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.1",
+    "prettier": "^3.1.0",
+    "supertest": "^6.3.3"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coveragePathIgnorePatterns": [
+      "/node_modules/",
+      "/tests/",
+      "/seed-.*\\.js$"
+    ],
+    "collectCoverageFrom": [
+      "controllers/**/*.js",
+      "models/**/*.js",
+      "routes/**/*.js",
+      "middleware/**/*.js"
+    ]
+  },
+  "prettier": {
+    "semi": true,
+    "trailingComma": "es5",
+    "singleQuote": true,
+    "printWidth": 100,
+    "tabWidth": 2
+  },
+  "volta": {
+    "node": "18.17.0"
+  },
+  "private": true
+}

@@ -1,0 +1,42 @@
+services:
+  db:
+    image: mongo:6
+    container_name: coffee-db
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - coffee-net
+
+  backend:
+    build: ./coffee-house-backend
+    container_name: coffee-backend
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGODB_URI=mongodb://db:27017/coffee-house
+    depends_on:
+      - db
+    networks:
+      - coffee-net
+
+  frontend:
+    build: ./coffee-house-frontend
+    container_name: coffee-frontend
+    restart: always
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    networks:
+      - coffee-net
+
+volumes:
+  mongo-data:
+
+networks:
+  coffee-net:
+    driver: bridge

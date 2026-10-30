@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coffee House</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+  <header>
+    <h1 data-key="title">Arabic Coffee</h1>
+    <nav>
+      <ul>
+        <li><a href="#hero" data-key="nav_home">Home</a></li>
+        <li><a href="#coffee" data-key="nav_coffee">Coffee</a></li>
+        <li><a href="#dessert" data-key="nav_dessert">Dessert</a></li>
+        <li><a href="#location" data-key="nav_location">Location</a></li>
+        <li><a href="#about" data-key="nav_about">About</a></li>
+      </ul>
+    </nav>
+    <div class="header-actions">
+    <button id="langToggle" class="btn-toggle btn-lang">EN</button>
+    <button id="darkModeToggle" class="btn-toggle">
+        <i class="fas fa-moon"></i>
+    </button>
+      <button class="header-icon-btn" id="loginBtn" title="Login">
+        <i class="fas fa-user"></i>
+      </button>
+      <button class="header-icon-btn" id="adminPanelBtn" title="Admin Panel" style="display:none">
+        <i class="fas fa-cog"></i>
+      </button>
+      <button class="header-icon-btn" id="orderHistoryBtn" title="Order History">
+        <i class="fas fa-receipt"></i>
+      </button>
+      <button class="cart-icon-btn" id="cartToggleBtn">
+        <i class="fas fa-shopping-cart"></i>
+        <span class="cart-badge" id="cartBadge">0</span>
+      </button>
+    </div>
+  </header>
+
+  <section class="hero" id="hero">
+    <div>
+      <h2 data-key="hero_welcome">Welcome</h2>
+      <p data-key="hero_slogan">Your perfect cup of coffee, every time</p>
+      <a href="#coffee" class="btn" data-key="hero_button">View Menu</a>
+    </div>
+  </section>
+
+  <!-- قائمة القهوة -->
+  <section id="coffee">
+    <h2 class="section-title" data-key="menu_coffee_title">Coffee Menu</h2>
+    <div class="menu coffee-grid" id="coffee-menu">
+    </div>
+  </section>
+
+  <!-- قائمة الحلويات -->
+  <section id="dessert">
+    <h2 class="section-title" data-key="menu_dessert_title">Desserts</h2>
+    <div class="menu dessert-grid" id="dessert-menu">
+    </div>
+  </section>
+
+  <!-- سلة التسوق المنسدلة -->
+  <div class="cart-dropdown" id="cartDropdown">
+    <div class="cart-dropdown-header">
+      <h3><i class="fas fa-shopping-cart"></i> <span data-key="cart_title">Your Cart</span></h3>
+      <button class="cart-close-btn" id="cartCloseBtn">&times;</button>
+    </div>
+    <div class="cart-items" id="cartItems">
+    </div>
+    <div class="cart-total">
+      <span data-key="cart_total">Total:</span>
+      <span id="cartTotal">0 RUB</span>
+    </div>
+    <button class="btn checkout-btn" id="checkoutBtn" data-key="cart_checkout">Proceed to Checkout</button>
+  </div>
+
+  <!-- صفحة الدفع -->
+  <div class="checkout-page" id="checkoutPage">
+    <div class="checkout-container">
+      <button class="back-btn" id="backToShopBtn">
+        <i class="fas fa-arrow-left"></i> <span data-key="checkout_back">Back to Menu</span>
+      </button>
+      
+      <h2 class="checkout-title" data-key="checkout_title">Checkout</h2>
+      
+      <div class="checkout-content">
+        <!-- ملخص الطلب -->
+        <div class="checkout-summary">
+          <h3><i class="fas fa-receipt"></i> <span data-key="checkout_summary">Order Summary</span></h3>
+          <div class="checkout-items" id="checkoutItems">
+          </div>
+          <div class="checkout-subtotal">
+            <span data-key="checkout_subtotal">Subtotal:</span>
+            <span id="checkoutSubtotal">0 RUB</span>
+          </div>
+          <div class="checkout-total-final">
+            <span data-key="checkout_total">Total:</span>
+            <span id="checkoutTotal">0 RUB</span>
+          </div>
+        </div>
+        
+        <!-- نموذج معلومات العميل -->
+        <div class="checkout-form-container">
+          <h3><i class="fas fa-user"></i> <span data-key="checkout_your_info">Your Information</span></h3>
+          <form id="checkoutForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="customerName" data-key="checkout_name">Full Name *</label>
+                <input type="text" id="customerName" data-placeholder-key="checkout_name_placeholder" placeholder="Enter your name" required>
+              </div>
+              <div class="form-group">
+                <label for="customerPhone" data-key="checkout_phone">Phone Number *</label>
+                <input type="tel" id="customerPhone" placeholder="+7 (___) ___-__-__" required>
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="customerEmail" data-key="checkout_email">Email (Optional)</label>
+              <input type="email" id="customerEmail" data-placeholder-key="checkout_email_placeholder" placeholder="your@email.com">
+            </div>
+            
+            <div class="form-group">
+              <label for="orderType" data-key="checkout_order_type">Order Type *</label>
+              <select id="orderType" required>
+                <option value="pickup" data-key="checkout_pickup">🏪 Pickup (In-store)</option>
+                <option value="delivery" data-key="checkout_delivery">🚗 Delivery</option>
+              </select>
+            </div>
+            
+            <div class="form-group delivery-address" id="deliveryAddressGroup" style="display: none;">
+              <label for="deliveryAddress" data-key="checkout_address">Delivery Address *</label>
+              <textarea id="deliveryAddress" data-placeholder-key="checkout_address_placeholder" placeholder="Enter your full delivery address" rows="2"></textarea>
+            </div>
+            
+            <div class="form-group">
+              <label for="specialInstructions" data-key="checkout_instructions">Special Instructions (Optional)</label>
+              <textarea id="specialInstructions" data-placeholder-key="checkout_instructions_placeholder" placeholder="Any special requests or notes..." rows="3"></textarea>
+            </div>
+            
+            <div class="form-group">
+              <label for="paymentMethod" data-key="checkout_payment">Payment Method *</label>
+              <select id="paymentMethod" required>
+                <option value="cash" data-key="checkout_cash">💵 Cash on Pickup/Delivery</option>
+                <option value="card" data-key="checkout_card">💳 Card on Pickup/Delivery</option>
+              </select>
+            </div>
+            
+            <button type="submit" class="btn place-order-btn" data-key="checkout_place_order">
+              <i class="fas fa-check"></i> Place Order
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- رسالة نجاح الطلب -->
+  <div class="order-success-modal" id="orderSuccessModal">
+    <div class="success-content">
+      <div class="success-icon">
+        <i class="fas fa-check-circle"></i>
+      </div>
+      <h2 data-key="success_title">Order Placed Successfully!</h2>
+      <p data-key="success_thanks">Thank you for your order.</p>
+      <p class="order-number"><span data-key="success_order_num">Order #:</span> <span id="orderNumberDisplay"></span></p>
+      <p class="order-message" data-key="success_message">We will prepare your order shortly.</p>
+      <button class="btn" id="continueShoppingBtn" data-key="success_continue">Continue Shopping</button>
+    </div>
+  </div>
+
+  <!-- صفحة سجل الطلبات -->
+  <div class="order-history-page" id="orderHistoryPage">
+    <div class="order-history-container">
+      <div class="order-history-header">
+        <button class="back-btn" id="backFromHistoryBtn">
+          <i class="fas fa-arrow-left"></i> <span data-key="history_back">Back</span>
+        </button>
+        <h2><i class="fas fa-history"></i> <span data-key="history_title">Order History</span></h2>
+      </div>
+      
+      <div class="order-history-content" id="orderHistoryContent">
+        <!-- Orders will be loaded here -->
+      </div>
+    </div>
+  </div>
+
+  <section id="location">
+    <h2 class="section-title" data-key="location_title">Visit Us</h2>
+    <div class="location-container">
+      <div class="info-box">
+        <h3 data-key="location_hours_name"><i class="fas fa-clock"></i> Opening Hours</h3>
+        <p data-key="location_hours_1">Sunday - Thursday: 7:00 AM - 11:00 PM</p>
+        <p data-key="location_hours_2">Friday - Saturday: 8:00 AM - 12:00 AM</p>
+      </div>
+      <div class="info-box">
+        <h3 data-key="location_location_name"><i class="fas fa-map-marker-alt"></i> Location</h3>
+        <p data-key="location_location_1">Krasnoyarsk, Center</p>
+        <p data-key="location_location_2">Mira 96, 2nd floor</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="reviews">
+    <h2 class="section-title" data-key="reviews_title">Happy Customers</h2>
+    <div class="reviews-wrapper" id="reviewsContainer">
+      <div class="review-card">
+        <p>Loading reviews...</p>
+        <span>- Loading...</span>
+      </div>
+    </div>
+    
+    <div class="add-review">
+      <h3 data-key="review_add_title">Add Your Review</h3>
+      <form id="reviewForm">
+        <div class="form-group">
+          <input type="text" id="reviewName" data-placeholder-key="review_name_placeholder" placeholder="Your Name" required>
+        </div>
+        <div class="form-group">
+          <select id="reviewRating" required>
+            <option value="" data-key="review_select_rating">Select Rating</option>
+            <option value="5">⭐⭐⭐⭐⭐ (5)</option>
+            <option value="4">⭐⭐⭐⭐ (4)</option>
+            <option value="3">⭐⭐⭐ (3)</option>
+            <option value="2">⭐⭐ (2)</option>
+            <option value="1">⭐ (1)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <textarea id="reviewComment" data-placeholder-key="review_comment_placeholder" placeholder="Your Review" rows="3" required></textarea>
+        </div>
+        <button type="submit" class="btn" data-key="review_submit">Submit Review</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="about">
+    <h2 data-key="about_title">About Us</h2>
+    <p id="aboutText" data-key="about_text">Loading about us...</p>
+  </section>
+
+  <footer>
+    <div class="social-icons">
+      <a href="#" id="vkLink"><i class="fab fa-vk"></i></a>
+      <a href="#" id="telegramLink"><i class="fab fa-telegram-plane"></i></a>
+    </div>
+    <p data-key="footer_text">© 2025 Coffee House | All Rights Reserved</p>
+  </footer>
+
+  <button id="backToTop">↑</button>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- LOGIN MODAL                            -->
+  <!-- ═══════════════════════════════════════ -->
+  <div class="modal-overlay" id="loginModal">
+    <div class="modal-box">
+      <button class="modal-close" id="loginModalClose">&times;</button>
+
+      <!-- Tab switcher -->
+      <div class="modal-tabs">
+        <button class="modal-tab active" id="tabUser">👤 Customer</button>
+        <button class="modal-tab" id="tabAdmin">🔐 Admin</button>
+      </div>
+
+      <!-- User login -->
+      <div id="userLoginForm">
+        <h3 class="modal-title">Welcome!</h3>
+        <p class="modal-subtitle">Enter your username to continue</p>
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="userUsername" placeholder="e.g. john_doe" autocomplete="off">
+        </div>
+        <div class="modal-error" id="userLoginError"></div>
+        <button class="btn modal-submit-btn" id="userLoginSubmit">Login / Register</button>
+        <div id="userLoggedInInfo" style="display:none">
+          <p class="modal-welcome">✅ Logged in as <strong id="loggedUserName"></strong></p>
+          <button class="btn btn-outline modal-submit-btn" id="userLogoutBtn">Logout</button>
+        </div>
+      </div>
+
+      <!-- Admin login -->
+      <div id="adminLoginForm" style="display:none">
+        <h3 class="modal-title">Admin Login</h3>
+        <p class="modal-subtitle">Enter admin credentials</p>
+        <div id="adminLoginFields">
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="adminUsername" placeholder="admin" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="adminPassword" placeholder="••••••••">
+          </div>
+          <div class="modal-error" id="adminLoginError"></div>
+          <button class="btn modal-submit-btn" id="adminLoginSubmit">Login as Admin</button>
+          <p class="forgot-password-wrap" id="adminForgotWrap" style="display:none" aria-hidden="true">
+            <button type="button" class="link-btn" id="adminForgotLink">Forgot password?</button>
+          </p>
+        </div>
+
+        <div id="adminForgotFlow" style="display:none;">
+          <div id="adminForgotStepSend">
+            <p class="modal-subtitle" id="adminForgotSendText"></p>
+            <div class="form-group">
+              <label for="adminRecoveryEmail" id="adminRecoveryEmailLabel">Recovery email</label>
+              <input type="email" id="adminRecoveryEmail" value="ha6456278@gmail.com" readonly>
+            </div>
+            <button type="button" class="btn modal-submit-btn" id="adminForgotSendBtn">Send code</button>
+          </div>
+          <div id="adminForgotStepCode" style="display:none;">
+            <p class="modal-subtitle modal-success" id="adminForgotCodeHint"></p>
+            <div class="form-group">
+              <label for="adminForgotCode" id="adminForgotCodeLabel">Verification code</label>
+              <input type="text" id="adminForgotCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10">
+            </div>
+            <button type="button" class="btn modal-submit-btn" id="adminForgotVerifyBtn">Continue</button>
+          </div>
+          <div id="adminForgotStepNewPw" style="display:none;">
+            <div class="form-group">
+              <label for="adminForgotNewPw" id="adminForgotNewPwLabel">New password</label>
+              <input type="password" id="adminForgotNewPw" autocomplete="new-password">
+            </div>
+            <div class="form-group">
+              <label for="adminForgotNewPw2" id="adminForgotNewPw2Label">Confirm password</label>
+              <input type="password" id="adminForgotNewPw2" autocomplete="new-password">
+            </div>
+            <div class="modal-error" id="adminForgotPwError"></div>
+            <button type="button" class="btn modal-submit-btn" id="adminForgotSavePwBtn">Save new password</button>
+          </div>
+          <button type="button" class="link-btn forgot-back-link" id="adminForgotBack">Back to login</button>
+        </div>
+
+        <div id="adminLoggedInInfo" style="display:none">
+          <p class="modal-welcome">✅ Logged in as Admin: <strong id="loggedAdminName"></strong></p>
+          <button class="btn btn-outline modal-submit-btn" id="adminLogoutBtn">Logout</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- ADMIN PANEL                            -->
+  <!-- ═══════════════════════════════════════ -->
+  <div class="admin-panel-overlay" id="adminPanel">
+    <div class="admin-panel-container">
+      <div class="admin-panel-header">
+        <h2>⚙️ Admin Panel</h2>
+        <button class="modal-close" id="adminPanelClose">&times;</button>
+      </div>
+
+      <div class="admin-tabs">
+        <button class="admin-tab active" data-tab="products">Products</button>
+        <button class="admin-tab" data-tab="add">Add Product</button>
+        <button class="admin-tab" data-tab="orders">Orders</button>
+      </div>
+
+      <!-- Products list tab -->
+      <div class="admin-tab-content active" id="adminTab-products">
+        <div class="admin-filter-row">
+          <select id="adminCategoryFilter">
+            <option value="">All Categories</option>
+            <option value="coffee">Coffee</option>
+            <option value="dessert">Dessert</option>
+            <option value="other">Other</option>
+          </select>
+          <button class="btn btn-sm" id="adminRefreshProducts">🔄 Refresh</button>
+        </div>
+        <div class="admin-filter-row">
+          <input type="number" id="bulkDessertStock" min="0" placeholder="Set stock for all desserts">
+          <button class="btn btn-sm" id="bulkDessertStockBtn">📦 Update All Desserts</button>
+        </div>
+        <div id="adminProductsList" class="admin-products-list">
+          <p>Loading...</p>
+        </div>
+      </div>
+
+      <!-- Add product tab -->
+      <div class="admin-tab-content" id="adminTab-add">
+        <h3>Add New Product</h3>
+        <div class="admin-form-grid">
+          <div class="form-group">
+            <label>Name (English) *</label>
+            <input type="text" id="apNameEn" placeholder="Espresso">
+          </div>
+          <div class="form-group">
+            <label>Name (Russian)</label>
+            <input type="text" id="apNameRu" placeholder="Эспрессо">
+          </div>
+          <div class="form-group">
+            <label>Description (EN)</label>
+            <input type="text" id="apDescEn" placeholder="Strong and bold...">
+          </div>
+          <div class="form-group">
+            <label>Description (RU)</label>
+            <input type="text" id="apDescRu" placeholder="Крепкий и насыщенный...">
+          </div>
+          <div class="form-group">
+            <label>Category *</label>
+            <select id="apCategory">
+              <option value="coffee">Coffee</option>
+              <option value="dessert">Dessert</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Price (RUB) *</label>
+            <input type="number" id="apPrice" placeholder="250" min="0">
+          </div>
+          <div class="form-group">
+            <label>Image URL</label>
+            <input type="text" id="apImage" placeholder="https://...">
+          </div>
+          <div class="form-group" id="apStockGroup">
+            <label>Stock</label>
+            <input type="number" id="apStock" placeholder="20" value="20" min="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label id="apFeaturedLabel" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="apFeatured"> Featured product
+          </label>
+        </div>
+        <div class="modal-error" id="addProductError"></div>
+        <div class="modal-success" id="addProductSuccess"></div>
+        <button class="btn modal-submit-btn" id="addProductBtn">➕ Add Product</button>
+      </div>
+
+      <!-- Orders tab -->
+      <div class="admin-tab-content" id="adminTab-orders">
+        <div class="admin-filter-row">
+          <select id="adminOrderFilter">
+            <option value="">All Statuses</option>
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="preparing">Preparing</option>
+            <option value="ready">Ready</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <button class="btn btn-sm" id="adminRefreshOrders">🔄 Refresh</button>
+        </div>
+        <div id="adminOrdersList" class="admin-orders-list">
+          <p>Loading...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit product modal -->
+  <div class="modal-overlay" id="editProductModal">
+    <div class="modal-box">
+      <button class="modal-close" id="editModalClose">&times;</button>
+      <h3 class="modal-title">Edit Product</h3>
+      <input type="hidden" id="editProductId">
+      <div class="admin-form-grid">
+        <div class="form-group">
+          <label>Name (EN) *</label>
+          <input type="text" id="editNameEn">
+        </div>
+        <div class="form-group">
+          <label>Name (RU)</label>
+          <input type="text" id="editNameRu">
+        </div>
+        <div class="form-group">
+          <label>Price *</label>
+          <input type="number" id="editPrice" min="0">
+        </div>
+        <div class="form-group">
+          <label>Stock</label>
+          <input type="number" id="editStock" min="0">
+        </div>
+        <div class="form-group">
+          <label>Available</label>
+          <select id="editAvailable">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Featured</label>
+          <select id="editFeatured">
+            <option value="false">No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-error" id="editProductError"></div>
+      <button class="btn modal-submit-btn" id="editProductSave">💾 Save Changes</button>
+    </div>
+  </div>
+
+  <script src="front.js"></script>
+</body>
+</html>
