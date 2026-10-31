@@ -121,11 +121,6 @@
             </div>
             
             <div class="form-group">
-              <label for="customerEmail" data-key="checkout_email">Email (Optional)</label>
-              <input type="email" id="customerEmail" data-placeholder-key="checkout_email_placeholder" placeholder="your@email.com">
-            </div>
-            
-            <div class="form-group">
               <label for="orderType" data-key="checkout_order_type">Order Type *</label>
               <select id="orderType" required>
                 <option value="pickup" data-key="checkout_pickup">🏪 Pickup (In-store)</option>
@@ -170,6 +165,12 @@
       <p data-key="success_thanks">Thank you for your order.</p>
       <p class="order-number"><span data-key="success_order_num">Order #:</span> <span id="orderNumberDisplay"></span></p>
       <p class="order-message" data-key="success_message">We will prepare your order shortly.</p>
+      <div class="tracking-code-box">
+        <p data-key="success_tracking_label">Your private order tracking code:</p>
+        <strong id="trackingTokenDisplay" aria-live="polite"></strong>
+        <button type="button" class="btn tracking-copy-btn" id="copyTrackingTokenBtn" data-key="success_copy_tracking">Copy code</button>
+        <small data-key="success_tracking_hint">Save this code. You will need it to track your order from another device. It cannot be recovered if lost.</small>
+      </div>
       <button class="btn" id="continueShoppingBtn" data-key="success_continue">Continue Shopping</button>
     </div>
   </div>
@@ -184,6 +185,15 @@
         <h2><i class="fas fa-history"></i> <span data-key="history_title">Order History</span></h2>
       </div>
       
+      <section class="order-track-panel" aria-labelledby="trackOrderHeading">
+        <h3 id="trackOrderHeading" data-key="track_title">Track an order from any device</h3>
+        <p data-key="track_hint">Enter the private tracking code you received after placing your order.</p>
+        <form id="trackOrderForm" class="track-order-form">
+          <input type="text" id="trackingTokenInput" data-placeholder-key="track_placeholder" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your tracking code" required>
+          <button type="submit" class="btn" data-key="track_button">Track order</button>
+        </form>
+        <div id="trackOrderResult" class="track-order-result" role="status" aria-live="polite"></div>
+      </section>
       <div class="order-history-content" id="orderHistoryContent">
         <!-- Orders will be loaded here -->
       </div>

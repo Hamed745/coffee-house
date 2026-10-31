@@ -33,7 +33,6 @@ const orderSchema = new mongoose.Schema({
   customer: {
     name: { type: String, required: [true, 'Customer name is required'] },
     phone: { type: String, required: [true, 'Customer phone is required'] },
-    email: { type: String, default: '' }
   },
   status: { 
     type: String, 
@@ -51,6 +50,8 @@ const orderSchema = new mongoose.Schema({
     apartment: String
   },
   deliveryNotes: String,
+  specialInstructions: { type: String, maxlength: 500, default: '' },
+  trackingTokenHash: { type: String, required: true, select: false, index: true },
   pickupTime: Date,
   paymentMethod: {
     type: String,

@@ -1,16 +1,31 @@
+
 const Settings = require('../models/Settings');
+
+// ============================================
+// Get Store Settings
+// ============================================
 
 exports.getSettings = async (req, res) => {
   try {
     const { lang = 'en' } = req.query;
+    const selectedLang = lang === 'ru' ? 'ru' : 'en';
+
     const settings = await Settings.getSettings();
-    
+
+    const storeName = settings.storeName || {};
+    const storeDescription = settings.storeDescription || {};
+    const address = settings.address || {};
+
+    const localizedAddress = address[selectedLang] || {};
+    const englishAddress = address.en || {};
+
     const formattedSettings = {
-      storeName: settings.storeName[lang] || settings.storeName.en,
-      storeDescription: settings.storeDescription[lang] || settings.storeDescription.en,
+      storeName: storeName[selectedLang] || storeName.en || '',
+      storeDescription:
+        storeDescription[selectedLang] || storeDescription.en || '',
       address: {
-        street: settings.address[lang].street || settings.address.en.street,
-        city: settings.address[lang].city || settings.address.en.city
+        street: localizedAddress.street || englishAddress.street || '',
+        city: localizedAddress.city || englishAddress.city || ''
       },
       phone: settings.phone,
       email: settings.email,
@@ -20,7 +35,7 @@ exports.getSettings = async (req, res) => {
       deliveryFee: settings.deliveryFee,
       freeDeliveryThreshold: settings.freeDeliveryThreshold
     };
-    
+
     res.json({
       success: true,
       data: formattedSettings
@@ -34,19 +49,23 @@ exports.getSettings = async (req, res) => {
   }
 };
 
+// ============================================
+// Update Store Settings
+// ============================================
+
 exports.updateSettings = async (req, res) => {
   try {
     let settings = await Settings.findOne();
-    
+
     if (!settings) {
       settings = new Settings(req.body);
     } else {
       Object.assign(settings, req.body);
       settings.updatedAt = Date.now();
     }
-    
+
     await settings.save();
-    
+
     res.json({
       success: true,
       message: 'Settings updated successfully',
@@ -61,11 +80,17 @@ exports.updateSettings = async (req, res) => {
   }
 };
 
+// ============================================
+// Get Working Hours
+// ============================================
+
 exports.getWorkingHours = async (req, res) => {
   try {
     const settings = await Settings.getSettings();
+
     const { lang = 'en' } = req.query;
-    
+    const selectedLang = lang === 'ru' ? 'ru' : 'en';
+
     const dayNames = {
       en: {
         monday: 'Monday',
@@ -86,17 +111,33 @@ exports.getWorkingHours = async (req, res) => {
         sunday: 'Воскресенье'
       }
     };
-    
-    const formattedHours = settings.workingHours.map(hour => ({
-      day: dayNames[lang][hour.day] || hour.day,
-      open: hour.open,
-      close: hour.close,
-      closed: hour.closed,
-      display: hour.closed 
-        ? (lang === 'en' ? 'Closed' : 'Закрыто')
-        : `${hour.open} - ${hour.close}`
-    }));
-    
+
+    const workingHours = Array.isArray(settings.workingHours)
+      ? settings.workingHours
+      : [];
+
+    const formattedHours = workingHours.map((hour) => {
+      let display;
+
+      if (hour.closed) {
+        if (selectedLang === 'en') {
+          display = 'Closed';
+        } else {
+          display = 'Закрыто';
+        }
+      } else {
+        display = `${hour.open} - ${hour.close}`;
+      }
+
+      return {
+        day: dayNames[selectedLang][hour.day] || hour.day,
+        open: hour.open,
+        close: hour.close,
+        closed: hour.closed,
+        display
+      };
+    });
+
     res.json({
       success: true,
       data: formattedHours

@@ -2,7 +2,7 @@ const Product = require('../models/Product');
 
 function normalizeDessertPayload(payload = {}) {
   const normalized = { ...payload };
-  const category = normalized.category;
+  const {category} = normalized;
 
   if (category === 'dessert' && normalized.stock === undefined) {
     normalized.stock = 0;
@@ -29,7 +29,7 @@ exports.getAllProducts = async (req, res) => {
   try {
     const { category, featured, available, lang = 'en' } = req.query;
     
-    let query = {};
+    const query = {};
     if (category) query.category = category;
     if (featured !== undefined) query.featured = featured === 'true';
     if (available !== undefined) query.available = available === 'true';

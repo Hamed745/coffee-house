@@ -15,6 +15,12 @@ function getProductById(productId) {
   return products.find(p => p.id === productId);
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>\"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;'
+  })[character]);
+}
+
 // ============================================
 // API Functions
 // ============================================
@@ -86,6 +92,21 @@ class CoffeeHouseAPI {
     } catch (error) {
       console.error('Error creating order:', error);
       return { success: false, error: 'Network error' };
+    }
+  }
+
+  static async trackOrder(trackingToken) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/orders/track`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ trackingToken, lang: currentLang })
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Error tracking order:', error);
+      return { success: false, error: 'Network error. Please try again.' };
     }
   }
 
@@ -324,11 +345,84 @@ class CartManager {
 }
 
 // ============================================
+// Guest Order Tracking
+// ============================================
+class OrderTrackingManager {
+  static async submitTracking(e) {
+    e.preventDefault();
+    const input = document.getElementById('trackingTokenInput');
+    const resultContainer = document.getElementById('trackOrderResult');
+    const token = input?.value.trim() || '';
+    if (!token) return;
+
+    resultContainer.textContent = currentLang === 'ru' ? 'Поиск заказа...' : 'Looking up your order...';
+    const result = await CoffeeHouseAPI.trackOrder(token);
+    if (!result?.success || !result.data) {
+      resultContainer.textContent = result?.error || (currentLang === 'ru' ? 'Заказ не найден.' : 'Order not found.');
+      return;
+    }
+
+    const order = result.data;
+    const statusLabels = {
+      pending: currentLang === 'ru' ? 'Ожидает подтверждения' : 'Pending',
+      confirmed: currentLang === 'ru' ? 'Подтверждён' : 'Confirmed',
+      preparing: currentLang === 'ru' ? 'Готовится' : 'Preparing',
+      ready: currentLang === 'ru' ? 'Готов к выдаче' : 'Ready',
+      completed: currentLang === 'ru' ? 'Завершён' : 'Completed',
+      cancelled: currentLang === 'ru' ? 'Отменён' : 'Cancelled'
+    };
+    const itemsHtml = (order.items || []).map(item => `
+      <li>${escapeHtml(item.name)} × ${Number(item.quantity)} <span>${Number(item.subtotal).toFixed(2)} RUB</span></li>
+    `).join('');
+    const orderDate = new Date(order.createdAt).toLocaleString(currentLang === 'ru' ? 'ru-RU' : 'en-US');
+
+    resultContainer.innerHTML = `
+      <div class="tracked-order-card">
+        <div class="tracked-order-heading">
+          <strong>#${escapeHtml(order.orderNumber)}</strong>
+          <span class="order-status ${escapeHtml(order.status)}">${escapeHtml(statusLabels[order.status] || order.status)}</span>
+        </div>
+        <p>${currentLang === 'ru' ? 'Дата заказа:' : 'Order date:'} ${escapeHtml(orderDate)}</p>
+        <p>${currentLang === 'ru' ? 'Тип:' : 'Type:'} ${order.orderType === 'delivery' ? (currentLang === 'ru' ? 'Доставка' : 'Delivery') : (currentLang === 'ru' ? 'Самовывоз' : 'Pickup')}</p>
+        <ul>${itemsHtml}</ul>
+        <strong class="tracked-order-total">${currentLang === 'ru' ? 'Итого:' : 'Total:'} ${Number(order.totalAmount).toFixed(2)} RUB</strong>
+      </div>
+    `;
+  }
+
+  static async copyTrackingToken() {
+    const token = document.getElementById('trackingTokenDisplay')?.textContent || '';
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(token);
+      UIManager.showNotification(currentLang === 'ru' ? 'Код скопирован' : 'Tracking code copied');
+    } catch (error) {
+      UIManager.showNotification(currentLang === 'ru' ? 'Скопируйте код вручную' : 'Please copy the code manually', 'error');
+    }
+  }
+}
+
+// ============================================
 // Order History Functions
 // ============================================
 class OrderHistoryManager {
   static getOrders() {
-    return JSON.parse(localStorage.getItem('coffeeHouseOrders')) || [];
+    let orders = [];
+    try {
+      const storedOrders = JSON.parse(localStorage.getItem('coffeeHouseOrders') || '[]');
+      orders = Array.isArray(storedOrders)
+        ? storedOrders.filter(order => order && typeof order === 'object')
+        : [];
+    } catch (error) {
+      orders = [];
+    }
+
+    // Older versions stored customer contact details locally. Remove them from browser storage.
+    const sanitizedOrders = orders.map(({ customer, ...order }) => order);
+    if (sanitizedOrders.length !== orders.length || orders.some(order => order.customer)) {
+      localStorage.setItem('coffeeHouseOrders', JSON.stringify(sanitizedOrders));
+    }
+    return sanitizedOrders;
   }
 
   static saveOrder(order) {
@@ -377,12 +471,11 @@ class OrderHistoryManager {
       <div class="order-card">
         <div class="order-card-header">
           <div>
-            <div class="order-id">${t.history_order}${order.orderNumber}</div>
-            <div class="order-date">${this.formatDate(order.date)}</div>
+            <div class="order-id">${escapeHtml(t.history_order)}${escapeHtml(order.orderNumber)}</div>
+            <div class="order-date">${escapeHtml(this.formatDate(order.date))}</div>
           </div>
           <div class="order-header-actions">
-            <span class="order-status ${order.status}">${order.status}</span>
-            <button class="delete-order-btn" data-order="${order.orderNumber}" title="Delete Order">
+            <button class="delete-order-btn" data-order="${escapeHtml(order.orderNumber)}" title="Delete Order">
               <i class="fas fa-trash"></i>
             </button>
           </div>
@@ -392,10 +485,10 @@ class OrderHistoryManager {
             ${order.items.map(item => `
               <div class="order-item-row">
                 <div>
-                  <span class="order-item-name">${item.name}</span>
-                  <span class="order-item-qty"> × ${item.quantity}</span>
+                  <span class="order-item-name">${escapeHtml(item.name)}</span>
+                  <span class="order-item-qty"> × ${Number(item.quantity)}</span>
                 </div>
-                <span class="order-item-price">${item.price * item.quantity} RUB</span>
+                <span class="order-item-price">${Number(item.price) * Number(item.quantity)} RUB</span>
               </div>
             `).join('')}
           </div>
@@ -405,7 +498,7 @@ class OrderHistoryManager {
             <i class="fas fa-${order.orderType === 'delivery' ? 'truck' : 'store'}"></i>
             ${order.orderType === 'delivery' ? t.history_delivery : t.history_pickup}
           </div>
-          <div class="order-total">${t.history_total} <span>${order.total} RUB</span></div>
+          <div class="order-total">${escapeHtml(t.history_total)} <span>${Number(order.total)} RUB</span></div>
         </div>
       </div>
     `).join('');
@@ -502,7 +595,6 @@ class CheckoutManager {
     const total = CartManager.getCartTotal();
     const customerName = document.getElementById('customerName').value;
     const customerPhone = document.getElementById('customerPhone').value;
-    const customerEmail = document.getElementById('customerEmail').value || '';
     const deliveryAddressRaw = document.getElementById('deliveryAddress')?.value || '';
     const specialInstructions = document.getElementById('specialInstructions').value || '';
     const paymentMethod = document.getElementById('paymentMethod').value;
@@ -518,24 +610,18 @@ class CheckoutManager {
     }
 
     // Generate temporary local order number; replace with backend number if available
-    let orderNumber = 'ORD-' + Date.now().toString().slice(-8);
+    let orderNumber = '';
 
     const localOrder = {
       orderNumber: orderNumber,
       date: new Date().toISOString(),
-      status: 'pending',
       items: cart.map(item => ({
         name: item.name,
         quantity: item.quantity,
         price: item.price
       })),
       total: total,
-      orderType: orderType,
-      customer: {
-        name: customerName,
-        phone: customerPhone,
-        email: customerEmail
-      }
+      orderType: orderType
     };
 
     let result;
@@ -546,7 +632,7 @@ class CheckoutManager {
           quantity: item.quantity,
           specialInstructions: ''
         })),
-        customer: localOrder.customer,
+        customer: { name: customerName, phone: customerPhone },
         orderType: orderType,
         deliveryAddress: orderType === 'delivery'
           ? { street: deliveryAddressRaw, city: '', apartment: '' }
@@ -563,26 +649,31 @@ class CheckoutManager {
       return;
     }
 
-    if (result?.data?.orderNumber) {
-      orderNumber = result.data.orderNumber;
-      localOrder.orderNumber = orderNumber;
+    if (!result?.data?.orderNumber || !result?.data?.trackingToken) {
+      UIManager.showNotification('The server did not return the order tracking details. Please contact the shop before retrying.', 'error');
+      return;
     }
+
+    orderNumber = result.data.orderNumber;
+    localOrder.orderNumber = orderNumber;
     OrderHistoryManager.saveOrder(localOrder);
 
     products = await CoffeeHouseAPI.fetchProducts();
     UIManager.renderProducts();
 
     this.hideCheckoutPage();
-    this.showOrderSuccess(orderNumber);
+    this.showOrderSuccess(orderNumber, result.data.trackingToken);
     CartManager.clearCart();
     document.getElementById('checkoutForm').reset();
   }
 
-  static showOrderSuccess(orderNumber) {
+  static showOrderSuccess(orderNumber, trackingToken) {
     const modal = document.getElementById('orderSuccessModal');
     const orderNumberDisplay = document.getElementById('orderNumberDisplay');
     
     if (orderNumberDisplay) orderNumberDisplay.textContent = orderNumber;
+    const trackingTokenDisplay = document.getElementById('trackingTokenDisplay');
+    if (trackingTokenDisplay) trackingTokenDisplay.textContent = trackingToken || '';
     modal.classList.add('show');
   }
 
@@ -768,6 +859,17 @@ class UIManager {
       checkoutForm.addEventListener('submit', (e) => CheckoutManager.submitOrder(e));
     }
 
+    // Guest order tracking form
+    const trackOrderForm = document.getElementById('trackOrderForm');
+    if (trackOrderForm) {
+      trackOrderForm.addEventListener('submit', (e) => OrderTrackingManager.submitTracking(e));
+    }
+
+    const copyTrackingTokenBtn = document.getElementById('copyTrackingTokenBtn');
+    if (copyTrackingTokenBtn) {
+      copyTrackingTokenBtn.addEventListener('click', () => OrderTrackingManager.copyTrackingToken());
+    }
+
     // Continue shopping button
     const continueShoppingBtn = document.getElementById('continueShoppingBtn');
     if (continueShoppingBtn) {
@@ -881,8 +983,6 @@ const translations = {
         'checkout_name': 'Full Name *',
         'checkout_name_placeholder': 'Enter your name',
         'checkout_phone': 'Phone Number *',
-        'checkout_email': 'Email (Optional)',
-        'checkout_email_placeholder': 'your@email.com',
         'checkout_order_type': 'Order Type *',
         'checkout_pickup': '🏪 Pickup (In-store)',
         'checkout_delivery': '🚗 Delivery',
@@ -900,7 +1000,14 @@ const translations = {
         'success_thanks': 'Thank you for your order.',
         'success_order_num': 'Order #:',
         'success_message': 'We will prepare your order shortly.',
+        'success_tracking_label': 'Your private order tracking code:',
+        'success_tracking_hint': 'Save this code. You will need it to track your order from another device. It cannot be recovered if lost.',
+        'success_copy_tracking': 'Copy code',
         'success_continue': 'Continue Shopping',
+        'track_title': 'Track an order from any device',
+        'track_hint': 'Enter the private tracking code you received after placing your order.',
+        'track_button': 'Track order',
+        'track_placeholder': 'Paste your tracking code',
         // Order history
         'history_back': 'Back',
         'history_title': 'Order History',
@@ -963,8 +1070,6 @@ const translations = {
         'checkout_name': 'Полное имя *',
         'checkout_name_placeholder': 'Введите ваше имя',
         'checkout_phone': 'Номер телефона *',
-        'checkout_email': 'Email (необязательно)',
-        'checkout_email_placeholder': 'ваш@email.com',
         'checkout_order_type': 'Тип заказа *',
         'checkout_pickup': '🏪 Самовывоз',
         'checkout_delivery': '🚗 Доставка',
@@ -982,7 +1087,14 @@ const translations = {
         'success_thanks': 'Спасибо за ваш заказ.',
         'success_order_num': 'Заказ №:',
         'success_message': 'Мы скоро приготовим ваш заказ.',
+        'success_tracking_label': 'Ваш личный код отслеживания заказа:',
+        'success_tracking_hint': 'Сохраните этот код. Он понадобится для отслеживания заказа с другого устройства. Восстановить утерянный код нельзя.',
+        'success_copy_tracking': 'Скопировать код',
         'success_continue': 'Продолжить покупки',
+        'track_title': 'Отследить заказ с любого устройства',
+        'track_hint': 'Введите личный код отслеживания, полученный после оформления заказа.',
+        'track_button': 'Отследить заказ',
+        'track_placeholder': 'Вставьте код отслеживания',
         // Order history
         'history_back': 'Назад',
         'history_title': 'История заказов',
@@ -1822,19 +1934,19 @@ class AdminPanelManager {
     container.innerHTML = data.data.map(o => `
       <div class="admin-order-row">
         <div class="admin-order-header">
-          <strong>#${o.orderNumber}</strong>
-          <span class="admin-status-badge status-${o.status}">${o.status}</span>
-          <span class="admin-order-total">${o.totalAmount} RUB</span>
-          <span class="admin-order-date">${new Date(o.createdAt).toLocaleString()}</span>
+          <strong>#${escapeHtml(o.orderNumber)}</strong>
+          <span class="admin-status-badge status-${escapeHtml(o.status)}">${escapeHtml(o.status)}</span>
+          <span class="admin-order-total">${Number(o.totalAmount)} RUB</span>
+          <span class="admin-order-date">${escapeHtml(new Date(o.createdAt).toLocaleString())}</span>
         </div>
         <div class="admin-order-customer">
-          👤 ${o.customer.name} &nbsp;📞 ${o.customer.phone}
+          👤 ${escapeHtml(o.customer.name)} &nbsp;📞 ${escapeHtml(o.customer.phone)}
         </div>
         <div class="admin-order-items">
-          ${o.items.map(i => `<span class="admin-order-item">${i.quantity}× ${i.product?.name?.en || 'item'}</span>`).join('')}
+          ${o.items.map(i => `<span class="admin-order-item">${Number(i.quantity)}× ${escapeHtml(i.product?.name?.en || 'item')}</span>`).join('')}
         </div>
         <div class="admin-order-controls">
-          <select onchange="AdminPanelManager.updateOrderStatus('${o._id}', this.value)" class="admin-status-select">
+          <select onchange="AdminPanelManager.updateOrderStatus('${escapeHtml(o._id)}', this.value)" class="admin-status-select">
             ${['pending','confirmed','preparing','ready','completed','cancelled'].map(s =>
               `<option value="${s}" ${o.status === s ? 'selected' : ''}>${s}</option>`
             ).join('')}

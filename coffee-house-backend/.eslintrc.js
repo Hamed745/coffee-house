@@ -16,5 +16,19 @@ module.exports = {
     'no-underscore-dangle': ['error', { allow: ['_id'] }],
     'class-methods-use-this': 'off',
   },
-  ignorePatterns: ['node_modules/', 'dist/', 'coverage/'],
+  overrides: [
+    {
+      files: ['frontend/**/*.js'],
+      env: {
+        browser: true,
+        node: false,
+      },
+    },
+  ],
+ ignorePatterns: [
+  'node_modules/',
+  'dist/',
+  'coverage/',
+  'frontend/',
+],
 };

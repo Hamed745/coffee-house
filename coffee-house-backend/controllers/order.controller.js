@@ -1,241 +1,552 @@
+
+const crypto = require('crypto');
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 
+const ORDER_STATUSES = [
+  'pending',
+  'confirmed',
+  'preparing',
+  'ready',
+  'completed',
+  'cancelled'
+];
+
+const PAYMENT_METHODS = ['cash', 'card'];
+const DELIVERY_FEE = 100;
+
+const hashTrackingToken = (token) =>
+  crypto.createHash('sha256').update(token).digest('hex');
+
+// ============================================
+// Create Order
+// ============================================
+
 exports.createOrder = async (req, res) => {
+  const reservedStock = [];
+  let orderSaved = false;
+
+  const rollbackReservedStock = async () => {
+    await reservedStock
+      .slice()
+      .reverse()
+      .reduce(
+        (previousRollback, reservation) =>
+          previousRollback.then(() =>
+            Product.updateOne(
+              { _id: reservation.productId },
+              {
+                $inc: { stock: reservation.quantity },
+                $set: { available: true }
+              }
+            )
+          ),
+        Promise.resolve()
+      );
+  };
+
   try {
-    const { items, customer, orderType, deliveryAddress, specialInstructions } = req.body;
-    
-    if (!items || !Array.isArray(items) || items.length === 0) {
+    const {
+      items,
+      customer,
+      orderType = 'pickup',
+      deliveryAddress,
+      specialInstructions = '',
+      paymentMethod = 'cash'
+    } = req.body || {};
+
+    const name =
+      typeof customer?.name === 'string' ? customer.name.trim() : '';
+
+    const phone =
+      typeof customer?.phone === 'string' ? customer.phone.trim() : '';
+
+    const phoneDigits = phone.replace(/\D/g, '');
+
+    if (name.length < 2 || name.length > 80) {
       return res.status(400).json({
         success: false,
-        error: 'Order must contain at least one item'
+        error: 'Name must be between 2 and 80 characters'
       });
     }
-    
-    let totalAmount = 0;
-    const validatedItems = [];
-    
-    for (const item of items) {
-      const product = await Product.findById(item.productId);
-      
-      if (!product) {
-        return res.status(404).json({
-          success: false,
-          error: `Product not found: ${item.productId}`
-        });
-      }
-      
-      if (!product.available) {
-        return res.status(400).json({
-          success: false,
-          error: `Product not available: ${product.name.en || product.name}`
-        });
-      }
 
-      // Check dessert stock
-      if (product.category === 'dessert' && product.stock !== -1) {
-        if (product.stock < item.quantity) {
-          return res.status(400).json({
-            success: false,
-            error: `Not enough stock for: ${product.name.en || product.name}. Available: ${product.stock}`
-          });
-        }
-      }
-      
-      const itemTotal = product.price * item.quantity;
-      totalAmount += itemTotal;
-      
-      validatedItems.push({
+    if (!/^[+0-9()\-.\s]{7,20}$/.test(phone) || phoneDigits.length < 7) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please provide a valid phone number'
+      });
+    }
+
+    if (!Array.isArray(items) || items.length === 0 || items.length > 30) {
+      return res.status(400).json({
+        success: false,
+        error: 'Order must contain between 1 and 30 items'
+      });
+    }
+
+    if (!['pickup', 'delivery'].includes(orderType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid order type'
+      });
+    }
+
+    if (!PAYMENT_METHODS.includes(paymentMethod)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid payment method'
+      });
+    }
+
+    if (
+      typeof specialInstructions !== 'string' ||
+      specialInstructions.length > 500
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'Special instructions must be 500 characters or fewer'
+      });
+    }
+
+    const street =
+      typeof deliveryAddress?.street === 'string'
+        ? deliveryAddress.street.trim()
+        : '';
+
+    if (
+      orderType === 'delivery' &&
+      (street.length < 5 || street.length > 250)
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'A valid delivery address is required'
+      });
+    }
+
+    // ============================================
+    // Validate Order Items
+    // ============================================
+
+    const invalidItem = items.find(
+      (item) =>
+        !item ||
+        !mongoose.isValidObjectId(item.productId) ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity < 1 ||
+        item.quantity > 50
+    );
+
+    if (invalidItem) {
+      return res.status(400).json({
+        success: false,
+        error: 'Each item must have a valid product and quantity from 1 to 50'
+      });
+    }
+
+    const quantitiesByProduct = new Map();
+
+    items.forEach((item) => {
+      const productId = String(item.productId);
+
+      quantitiesByProduct.set(
+        productId,
+        (quantitiesByProduct.get(productId) || 0) + item.quantity
+      );
+    });
+
+    const productIds = [...quantitiesByProduct.keys()];
+
+    const foundProducts = await Product.find({
+      _id: { $in: productIds }
+    });
+
+    const productsById = new Map(
+      foundProducts.map((product) => [String(product._id), product])
+    );
+
+    if (foundProducts.length !== productIds.length) {
+      return res.status(404).json({
+        success: false,
+        error: 'One or more products could not be found'
+      });
+    }
+
+    // ============================================
+    // Check Product Availability
+    // ============================================
+
+    const unavailableItem = items.find((item) => {
+      const product = productsById.get(String(item.productId));
+
+      return !product || !product.available;
+    });
+
+    if (unavailableItem) {
+      return res.status(400).json({
+        success: false,
+        error: 'One or more products are not available'
+      });
+    }
+
+    const itemWithLongInstructions = items.find(
+      (item) =>
+        typeof item.specialInstructions === 'string' &&
+        item.specialInstructions.length > 250
+    );
+
+    if (itemWithLongInstructions) {
+      return res.status(400).json({
+        success: false,
+        error: 'Item instructions are too long'
+      });
+    }
+
+    const validatedItems = items.map((item) => {
+      const product = productsById.get(String(item.productId));
+
+      const itemInstructions =
+        typeof item.specialInstructions === 'string'
+          ? item.specialInstructions
+          : '';
+
+      return {
         product: product._id,
         quantity: item.quantity,
         priceAtTime: product.price,
-        specialInstructions: item.specialInstructions || ''
+        specialInstructions: itemInstructions
+      };
+    });
+
+    let totalAmount = items.reduce((total, item) => {
+      const product = productsById.get(String(item.productId));
+
+      return total + product.price * item.quantity;
+    }, 0);
+
+    if (orderType === 'delivery') {
+      totalAmount += DELIVERY_FEE;
+    }
+
+    // ============================================
+    // Reserve Dessert Stock Sequentially
+    // ============================================
+
+    let reservationError = null;
+
+    await Array.from(quantitiesByProduct.entries()).reduce(
+      async (previousReservation, [productId, quantity]) => {
+        await previousReservation;
+
+        if (reservationError) {
+          return;
+        }
+
+        const product = productsById.get(productId);
+
+        if (product.category !== 'dessert' || product.stock === -1) {
+          return;
+        }
+
+        const reservation = await Product.updateOne(
+          {
+            _id: product._id,
+            category: 'dessert',
+            stock: { $gte: quantity, $ne: -1 }
+          },
+          {
+            $inc: { stock: -quantity }
+          }
+        );
+
+        if (reservation.modifiedCount !== 1) {
+          reservationError =
+            `Not enough stock for ${product.name?.en || 'a selected dessert'}`;
+
+          return;
+        }
+
+        reservedStock.push({
+          productId: product._id,
+          quantity
+        });
+
+        await Product.updateOne(
+          {
+            _id: product._id,
+            stock: 0
+          },
+          {
+            $set: { available: false }
+          }
+        );
+      },
+      Promise.resolve()
+    );
+
+    if (reservationError) {
+      await rollbackReservedStock();
+
+      return res.status(409).json({
+        success: false,
+        error: reservationError
       });
     }
-    
-    if (orderType === 'delivery') {
-      totalAmount += 100;
-    }
-    
-    const orderData = {
+
+    // ============================================
+    // Create and Save Order
+    // ============================================
+
+    const trackingToken = crypto.randomBytes(32).toString('base64url');
+
+    const order = new Order({
       items: validatedItems,
       totalAmount,
       customer: {
-        name: customer.name,
-        phone: customer.phone,
-        email: customer.email || ''
+        name,
+        phone
       },
-      orderType: orderType || 'pickup',
-      deliveryAddress: deliveryAddress || {},
-      specialInstructions: specialInstructions || ''
-    };
-    
-    const order = new Order(orderData);
-    await order.save();
+      orderType,
+      deliveryAddress: orderType === 'delivery' ? { street } : {},
+      specialInstructions: specialInstructions.trim(),
+      paymentMethod,
+      trackingTokenHash: hashTrackingToken(trackingToken)
+    });
 
-    // Decrement stock for dessert items
-    for (const item of validatedItems) {
-      const product = await Product.findById(item.product);
-      if (product && product.category === 'dessert' && product.stock !== -1) {
-        product.stock = Math.max(0, product.stock - item.quantity);
-        if (product.stock === 0) product.available = false;
-        await product.save();
-      }
-    }
-    
-    const populatedOrder = await Order.findById(order._id)
-      .populate('items.product', 'name.en name.ru price image');
-    
-    res.status(201).json({
+    await order.save();
+    orderSaved = true;
+
+    res.set('Cache-Control', 'no-store');
+
+    return res.status(201).json({
       success: true,
       message: 'Order created successfully',
       data: {
-        orderId: populatedOrder._id,
-        orderNumber: populatedOrder.orderNumber,
-        status: populatedOrder.status,
-        totalAmount: populatedOrder.totalAmount,
-        items: populatedOrder.items.map(item => ({
-          product: {
-            id: item.product._id,
-            name: item.product.name,
-            price: item.product.price
-          },
-          quantity: item.quantity,
-          subtotal: item.priceAtTime * item.quantity
-        })),
-        customer: populatedOrder.customer,
-        createdAt: populatedOrder.createdAt
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        trackingToken,
+        status: order.status,
+        totalAmount: order.totalAmount,
+        createdAt: order.createdAt
       }
     });
-    
   } catch (error) {
-    res.status(500).json({
+    if (!orderSaved && reservedStock.length) {
+      try {
+        await rollbackReservedStock();
+      } catch (rollbackError) {
+        console.error('Stock rollback failed:', rollbackError.message);
+      }
+    }
+
+    console.error('Create order failed:', error.message);
+
+    return res.status(500).json({
       success: false,
-      error: 'Error creating order',
-      message: error.message
+      error: 'Unable to create order at this time'
     });
   }
 };
 
-exports.getOrderById = async (req, res) => {
+// ============================================
+// Public Guest Order Tracking
+// ============================================
+
+// The high-entropy token is the only customer credential.
+
+exports.trackOrder = async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id)
-      .populate('items.product', 'name.en name.ru price image category');
-    
+    const token =
+      typeof req.body?.trackingToken === 'string'
+        ? req.body.trackingToken.trim()
+        : '';
+
+    if (!/^[A-Za-z0-9_-]{40,50}$/.test(token)) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found. Check your tracking code.'
+      });
+    }
+
+    const order = await Order.findOne({
+      trackingTokenHash: hashTrackingToken(token)
+    })
+      .select('orderNumber status orderType totalAmount items createdAt updatedAt')
+      .populate('items.product', 'name.en name.ru');
+
+    res.set('Cache-Control', 'no-store');
+
     if (!order) {
       return res.status(404).json({
         success: false,
-        error: 'Order not found'
+        error: 'Order not found. Check your tracking code.'
       });
     }
-    
-    res.json({
+
+    return res.json({
       success: true,
-      data: order
+      data: {
+        orderNumber: order.orderNumber,
+        status: order.status,
+        orderType: order.orderType,
+        totalAmount: order.totalAmount,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        items: order.items.map((item) => ({
+          name:
+            item.product?.name?.[req.body.lang === 'ru' ? 'ru' : 'en'] ||
+            item.product?.name?.en ||
+            item.product?.name?.ru ||
+            'Product',
+          quantity: item.quantity,
+          subtotal: item.priceAtTime * item.quantity
+        }))
+      }
     });
   } catch (error) {
-    res.status(500).json({
+    console.error('Track order failed:', error.message);
+
+    return res.status(500).json({
       success: false,
-      error: 'Error fetching order',
-      message: error.message
+      error: 'Unable to retrieve order status at this time'
     });
   }
 };
 
-exports.getOrderByNumber = async (req, res) => {
-  try {
-    const order = await Order.findOne({ orderNumber: req.params.orderNumber })
-      .populate('items.product', 'name.en name.ru price image');
-    
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        error: 'Order not found'
-      });
-    }
-    
-    res.json({
-      success: true,
-      data: order
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Error fetching order',
-      message: error.message
-    });
-  }
-};
+// ============================================
+// Update Order Status
+// ============================================
 
 exports.updateOrderStatus = async (req, res) => {
   try {
-    const { status } = req.body;
-    
+    const { status } = req.body || {};
+
+    if (!ORDER_STATUSES.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid order status'
+      });
+    }
+
     const order = await Order.findByIdAndUpdate(
       req.params.id,
-      { status },
-      { new: true }
+      {
+        $set: {
+          status,
+          updatedAt: new Date()
+        }
+      },
+      {
+        new: true,
+        runValidators: true
+      }
     ).populate('items.product', 'name.en name.ru');
-    
+
     if (!order) {
       return res.status(404).json({
         success: false,
         error: 'Order not found'
       });
     }
-    
-    res.json({
+
+    return res.json({
       success: true,
       message: `Order status updated to ${status}`,
       data: order
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      error: 'Error updating order status',
-      message: error.message
+      error: 'Error updating order status'
     });
   }
 };
 
+// ============================================
+// Get All Orders
+// ============================================
+
 exports.getAllOrders = async (req, res) => {
   try {
-    const { status, startDate, endDate, page = 1, limit = 20 } = req.query;
-    
-    let query = {};
-    if (status) query.status = status;
-    
+    const { status, startDate, endDate } = req.query;
+
+    const page = Number.parseInt(req.query.page || '1', 10);
+    const limit = Number.parseInt(req.query.limit || '20', 10);
+
+    if (
+      (status && !ORDER_STATUSES.includes(status)) ||
+      !Number.isInteger(page) ||
+      page < 1 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid order filters or pagination values'
+      });
+    }
+
+    const query = {};
+
+    if (status) {
+      query.status = status;
+    }
+
     if (startDate || endDate) {
       query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+
+      if (startDate) {
+        const date = new Date(startDate);
+
+        if (Number.isNaN(date.getTime())) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid start date'
+          });
+        }
+
+        query.createdAt.$gte = date;
+      }
+
+      if (endDate) {
+        const date = new Date(endDate);
+
+        if (Number.isNaN(date.getTime())) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid end date'
+          });
+        }
+
+        query.createdAt.$lte = date;
+      }
     }
-    
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    
-    const orders = await Order.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .populate('items.product', 'name.en name.ru');
-    
-    const total = await Order.countDocuments(query);
-    
-    res.json({
+
+    const [orders, total] = await Promise.all([
+      Order.find(query)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('items.product', 'name.en name.ru'),
+
+      Order.countDocuments(query)
+    ]);
+
+    return res.json({
       success: true,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page,
+        limit,
         total,
-        pages: Math.ceil(total / parseInt(limit))
+        pages: Math.ceil(total / limit)
       },
       data: orders
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      error: 'Error fetching orders',
-      message: error.message
+      error: 'Error fetching orders'
     });
   }
 };

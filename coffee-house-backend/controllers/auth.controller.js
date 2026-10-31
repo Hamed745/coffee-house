@@ -1,26 +1,49 @@
-const User = require('../models/User');
-const Admin = require('../models/Admin');
+
 const crypto = require('crypto');
+const Admin = require('../models/Admin');
+const User = require('../models/User');
 const { sendAdminRecoveryCode } = require('../services/email.service');
 
-const TOKEN_SECRET = process.env.AUTH_TOKEN_SECRET || 'coffee-house-auth-secret';
+// Production must use a private, strong secret from environment variables.
+const TOKEN_SECRET =
+  process.env.AUTH_TOKEN_SECRET ||
+  (process.env.NODE_ENV === 'production' ? null : 'development-only-coffee-house-secret');
 
-// Admin password recovery (in-memory codes; email via SMTP if SMTP_USER + SMTP_PASS set)
-const ADMIN_RECOVERY_EMAIL = (process.env.ADMIN_RECOVERY_EMAIL || 'ha6456278@gmail.com').toLowerCase();
-const passwordResetCodes = new Map(); // email -> { code, expiresAt, attempts }
-const passwordResetSessions = new Map(); // token -> { email, expiresAt }
-
-function normalizeEmail(e) {
-  return (e || '').trim().toLowerCase();
+if (!TOKEN_SECRET || (process.env.NODE_ENV === 'production' && TOKEN_SECRET.length < 32)) {
+  throw new Error('AUTH_TOKEN_SECRET must be configured with at least 32 characters in production.');
 }
+
+function normalizeEmail(email) {
+  return typeof email === 'string' ? email.trim().toLowerCase() : '';
+}
+
+const ADMIN_RECOVERY_EMAIL = normalizeEmail(process.env.ADMIN_RECOVERY_EMAIL);
+const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || '').trim();
+
+if (process.env.NODE_ENV === 'production') {
+  if (!ADMIN_RECOVERY_EMAIL || !ADMIN_USERNAME) {
+    throw new Error('ADMIN_RECOVERY_EMAIL and ADMIN_USERNAME must be configured in production.');
+  }
+}
+
+// Temporary recovery storage.
+// These sessions are cleared if the server restarts.
+const passwordResetCodes = new Map();
+const passwordResetSessions = new Map();
 
 function cleanupPasswordResetStore() {
   const now = Date.now();
-  passwordResetCodes.forEach((v, k) => {
-    if (v.expiresAt < now) passwordResetCodes.delete(k);
+
+  passwordResetCodes.forEach((value, key) => {
+    if (value.expiresAt <= now) {
+      passwordResetCodes.delete(key);
+    }
   });
-  passwordResetSessions.forEach((v, k) => {
-    if (v.expiresAt < now) passwordResetSessions.delete(k);
+
+  passwordResetSessions.forEach((value, key) => {
+    if (value.expiresAt <= now) {
+      passwordResetSessions.delete(key);
+    }
   });
 }
 
@@ -42,25 +65,48 @@ function signPayload(payload) {
 function generateToken(session) {
   const payload = toBase64Url(JSON.stringify(session));
   const signature = signPayload(payload);
+
   return `${payload}.${signature}`;
 }
 
-// ── User Login (username only) ──────────────────────────────────────────────
+function safeErrorResponse(res, error, message = 'An internal server error occurred.') {
+  console.error(error);
+  return res.status(500).json({
+    success: false,
+    error: message
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// User Login
+// NOTE: Username-only login is not secure authentication.
+// It must be replaced with password-based or verified authentication
+// before allowing public accounts to access private user data.
+// ─────────────────────────────────────────────────────────────
+
 exports.userLogin = async (req, res) => {
   try {
-    const { username } = req.body;
-    if (!username || username.trim().length < 3) {
-      return res.status(400).json({ success: false, error: 'Username must be at least 3 characters' });
+    const username =
+      typeof req.body.username === 'string'
+        ? req.body.username.trim()
+        : '';
+
+    if (username.length < 3 || username.length > 40) {
+      return res.status(400).json({
+        success: false,
+        error: 'Username must be between 3 and 40 characters.'
+      });
     }
 
-    // Create user if they don't exist (auto-register on first login)
-    let user = await User.findOne({ username: username.trim() });
+    let user = await User.findOne({ username });
+
     if (!user) {
-      user = new User({ username: username.trim() });
+      user = new User({ username });
       await user.save();
     }
 
-    const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+    const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+
     const token = generateToken({
       type: 'user',
       id: user._id.toString(),
@@ -68,26 +114,51 @@ exports.userLogin = async (req, res) => {
       expiresAt
     });
 
-    res.json({ success: true, token, username: user.username, role: 'user' });
+    return res.json({
+      success: true,
+      token,
+      username: user.username,
+      role: 'user'
+    });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    return safeErrorResponse(res, error);
   }
 };
 
-// ── Admin Login (username + password) ──────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Admin Login
+// ─────────────────────────────────────────────────────────────
+
 exports.adminLogin = async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const username =
+      typeof req.body.username === 'string'
+        ? req.body.username.trim()
+        : '';
+
+    const password =
+      typeof req.body.password === 'string'
+        ? req.body.password
+        : '';
+
     if (!username || !password) {
-      return res.status(400).json({ success: false, error: 'Username and password are required' });
+      return res.status(400).json({
+        success: false,
+        error: 'Username and password are required.'
+      });
     }
 
-    const admin = await Admin.findOne({ username: username.trim() });
-    if (!admin || !admin.checkPassword(password)) {
-      return res.status(401).json({ success: false, error: 'Wrong username or password' });
+    const admin = await Admin.findOne({ username });
+
+    if (!admin || !(await admin.checkPassword(password))) {
+      return res.status(401).json({
+        success: false,
+        error: 'Wrong username or password.'
+      });
     }
 
-    const expiresAt = Date.now() + 8 * 60 * 60 * 1000; // 8 hours
+    const expiresAt = Date.now() + 8 * 60 * 60 * 1000;
+
     const token = generateToken({
       type: 'admin',
       id: admin._id.toString(),
@@ -95,214 +166,384 @@ exports.adminLogin = async (req, res) => {
       expiresAt
     });
 
-    res.json({ success: true, token, username: admin.username, role: 'admin' });
+    return res.json({
+      success: true,
+      token,
+      username: admin.username,
+      role: 'admin'
+    });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    return safeErrorResponse(res, error);
   }
 };
 
-// ── Admin: request password reset code ─────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Admin Password Recovery - Send Code
+// ─────────────────────────────────────────────────────────────
+
 async function handleAdminRecoverySendCode(req, res, { realEmailOnly }) {
   cleanupPasswordResetStore();
+
+  const shouldUseRealEmail =
+    realEmailOnly || process.env.NODE_ENV === 'production';
+
   const email = normalizeEmail(req.body.email);
+
   if (!email) {
-    return res.status(400).json({ success: false, error: 'Email is required' });
-  }
-  if (email !== ADMIN_RECOVERY_EMAIL) {
     return res.status(400).json({
       success: false,
-      error: 'This email is not authorized for admin recovery'
+      error: 'Email is required.'
     });
   }
 
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  if (!ADMIN_RECOVERY_EMAIL || email !== ADMIN_RECOVERY_EMAIL) {
+    return res.status(400).json({
+      success: false,
+      error: 'This email is not authorized for admin recovery.'
+    });
+  }
+
+  const code = String(crypto.randomInt(100000, 1000000));
+
   passwordResetCodes.set(email, {
     code,
-    expiresAt: Date.now() + 15 * 60 * 1000,
+    expiresAt: Date.now() + 10 * 60 * 1000,
     attempts: 0
   });
 
   let sendResult;
+
   try {
-    sendResult = await sendAdminRecoveryCode({ to: email, code, realEmailOnly });
-  } catch (err) {
+    sendResult = await sendAdminRecoveryCode({
+      to: email,
+      code,
+      realEmailOnly: shouldUseRealEmail
+    });
+  } catch (error) {
     passwordResetCodes.delete(email);
-    console.error('Admin recovery email failed:', err.message);
+    console.error('Admin recovery email failed:', error.message);
+
     return res.status(500).json({
       success: false,
-      error:
-        'Could not send email. Check network or SMTP settings (e.g. Gmail App Password).'
+      error: 'Could not send the recovery email. Please try again later.'
     });
   }
 
-  if (realEmailOnly) {
-    if (!sendResult.sent || sendResult.transport !== 'smtp') {
+  if (shouldUseRealEmail) {
+    if (!sendResult?.sent || sendResult.transport !== 'smtp') {
       passwordResetCodes.delete(email);
+
       return res.status(503).json({
         success: false,
-        error:
-          'Real email delivery is not configured. Set SMTP_USER and SMTP_PASS in .env (use a Gmail App Password).',
-        delivery: 'unavailable'
+        error: 'Email delivery is unavailable. Please check the SMTP configuration.'
       });
     }
+
     return res.json({
       success: true,
       delivery: 'smtp',
-      message: `A verification code has been sent to ${ADMIN_RECOVERY_EMAIL}.`
+      message: 'A verification code has been sent to your recovery email.'
     });
   }
 
-  if (!sendResult.sent) {
-    console.log(`📧 Admin recovery code for ${email}: ${code}`);
-    console.log('   Production without SMTP: add SMTP_USER and SMTP_PASS to .env');
-  }
+  if (!sendResult?.sent) {
+    passwordResetCodes.delete(email);
 
-  let message;
-  if (sendResult.sent && sendResult.transport === 'smtp') {
-    message = `A verification code has been sent to ${ADMIN_RECOVERY_EMAIL}.`;
-  } else if (sendResult.sent && sendResult.transport === 'ethereal') {
-    message =
-      'A test message with your code was created. Open the “test inbox” link (development mode).';
-  } else {
-    message = `Your code is in the server terminal (email not enabled for this environment).`;
+    return res.status(503).json({
+      success: false,
+      error: 'Recovery email delivery is unavailable.'
+    });
   }
 
   return res.json({
     success: true,
-    message,
+    message: 'A verification code has been sent.',
     delivery: sendResult.transport || 'none',
-    devInboxUrl: sendResult.previewUrl || undefined
+    devInboxUrl: sendResult.transport === 'ethereal'
+      ? sendResult.previewUrl
+      : undefined
   });
 }
 
-/** Development-friendly: allows Ethereal test inbox when SMTP is not set. */
+// Development recovery endpoint.
 exports.adminRequestPasswordReset = async (req, res) => {
   try {
-    await handleAdminRecoverySendCode(req, res, { realEmailOnly: false });
+    await handleAdminRecoverySendCode(req, res, {
+      realEmailOnly: process.env.NODE_ENV === 'production'
+    });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    return safeErrorResponse(res, error);
   }
 };
 
-/**
- * Real inbox only (SMTP). POST body: { "email": "<ADMIN_RECOVERY_EMAIL>" }
- * No Ethereal; returns 503 if SMTP_USER / SMTP_PASS are not configured.
- */
+// Real email recovery endpoint.
 exports.adminSendRecoveryCodeRealEmail = async (req, res) => {
   try {
-    await handleAdminRecoverySendCode(req, res, { realEmailOnly: true });
+    await handleAdminRecoverySendCode(req, res, {
+      realEmailOnly: true
+    });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    return safeErrorResponse(res, error);
   }
 };
 
-// ── Admin: verify code → short-lived reset token ───────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Verify Recovery Code
+// ─────────────────────────────────────────────────────────────
+
 exports.adminVerifyPasswordResetCode = async (req, res) => {
   try {
     cleanupPasswordResetStore();
+
     const email = normalizeEmail(req.body.email);
-    const { code } = req.body;
+
+    const code =
+      typeof req.body.code === 'string'
+        ? req.body.code.trim()
+        : '';
+
     if (!email || !code) {
-      return res.status(400).json({ success: false, error: 'Email and code are required' });
-    }
-    if (email !== ADMIN_RECOVERY_EMAIL) {
-      return res.status(400).json({ success: false, error: 'Invalid email' });
+      return res.status(400).json({
+        success: false,
+        error: 'Email and code are required.'
+      });
     }
 
-    const rec = passwordResetCodes.get(email);
-    if (!rec || rec.expiresAt < Date.now()) {
-      return res.status(400).json({ success: false, error: 'Code expired or not requested. Request a new code.' });
+    if (email !== ADMIN_RECOVERY_EMAIL) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid email or verification code.'
+      });
     }
-    if (rec.attempts >= 8) {
-      return res.status(429).json({ success: false, error: 'Too many attempts. Request a new code.' });
+
+    const recovery = passwordResetCodes.get(email);
+
+    if (!recovery || recovery.expiresAt <= Date.now()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Code expired or not requested. Request a new code.'
+      });
     }
-    if (String(code).trim() !== rec.code) {
-      rec.attempts += 1;
-      return res.status(400).json({ success: false, error: 'Invalid code' });
+
+    if (recovery.attempts >= 5) {
+      passwordResetCodes.delete(email);
+
+      return res.status(429).json({
+        success: false,
+        error: 'Too many attempts. Request a new code.'
+      });
+    }
+
+    if (code !== recovery.code) {
+      recovery.attempts += 1;
+
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid email or verification code.'
+      });
     }
 
     const resetToken = crypto.randomBytes(32).toString('hex');
+
     passwordResetSessions.set(resetToken, {
       email,
-      expiresAt: Date.now() + 15 * 60 * 1000
+      expiresAt: Date.now() + 10 * 60 * 1000
     });
+
     passwordResetCodes.delete(email);
 
-    res.json({ success: true, resetToken, message: 'Code verified. Set your new password.' });
+    return res.json({
+      success: true,
+      resetToken,
+      message: 'Code verified. Set your new password.'
+    });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    return safeErrorResponse(res, error);
   }
 };
 
-// ── Admin: complete reset with token + new password ────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Complete Password Reset
+// ─────────────────────────────────────────────────────────────
+
 exports.adminCompletePasswordReset = async (req, res) => {
   try {
     cleanupPasswordResetStore();
-    const { resetToken, newPassword } = req.body;
+
+    const resetToken =
+      typeof req.body.resetToken === 'string'
+        ? req.body.resetToken
+        : '';
+
+    const newPassword =
+      typeof req.body.newPassword === 'string'
+        ? req.body.newPassword
+        : '';
+
     if (!resetToken || !newPassword) {
-      return res.status(400).json({ success: false, error: 'Reset token and new password are required' });
+      return res.status(400).json({
+        success: false,
+        error: 'Reset token and new password are required.'
+      });
     }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+
+    if (newPassword.length < 12) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 12 characters.'
+      });
     }
 
     const session = passwordResetSessions.get(resetToken);
-    if (!session || session.expiresAt < Date.now()) {
-      return res.status(400).json({ success: false, error: 'Reset session expired. Start again.' });
+
+    if (!session || session.expiresAt <= Date.now()) {
+      passwordResetSessions.delete(resetToken);
+
+      return res.status(400).json({
+        success: false,
+        error: 'Reset session expired. Start again.'
+      });
     }
+
     if (session.email !== ADMIN_RECOVERY_EMAIL) {
-      return res.status(400).json({ success: false, error: 'Invalid session' });
+      passwordResetSessions.delete(resetToken);
+
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid reset session.'
+      });
     }
 
-    const admin = await Admin.findOne({ username: 'hamed' }) || (await Admin.findOne());
+    const admin = ADMIN_USERNAME
+      ? await Admin.findOne({ username: ADMIN_USERNAME })
+      : await Admin.findOne();
+
     if (!admin) {
-      return res.status(500).json({ success: false, error: 'Admin account not found' });
+      return res.status(404).json({
+        success: false,
+        error: 'Admin account not found.'
+      });
     }
 
-    admin.setPassword(newPassword);
+    await admin.setPassword(newPassword);
     await admin.save();
+
     passwordResetSessions.delete(resetToken);
 
-    res.json({ success: true, message: 'Password updated. You can log in now.' });
+    return res.json({
+      success: true,
+      message: 'Password updated. You can log in now.'
+    });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    return safeErrorResponse(res, error);
   }
 };
 
-// ── Logout ──────────────────────────────────────────────────────────────────
-exports.logout = (req, res) => {
-  res.json({ success: true, message: 'Logged out' });
-};
+// ─────────────────────────────────────────────────────────────
+// Logout
+// ─────────────────────────────────────────────────────────────
 
-// ── Verify token (used by middleware) ──────────────────────────────────────
+exports.logout = (req, res) => res.json({
+  success: true,
+  message: 'Logged out.'
+});
+
+// ─────────────────────────────────────────────────────────────
+// Verify Token
+// ─────────────────────────────────────────────────────────────
+
 exports.verifyToken = (token) => {
-  if (!token || !token.includes('.')) return null;
+  if (typeof token !== 'string') {
+    return null;
+  }
 
-  const [payload, signature] = token.split('.');
-  if (!payload || !signature) return null;
+  const parts = token.split('.');
 
-  const expectedSignature = signPayload(payload);
-  if (signature !== expectedSignature) return null;
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const [payload, signature] = parts;
+
+  if (!payload || !signature) {
+    return null;
+  }
 
   try {
+    const expectedSignature = signPayload(payload);
+
+    const actualBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+
+    if (
+      actualBuffer.length !== expectedBuffer.length ||
+      !crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+    ) {
+      return null;
+    }
+
     const session = JSON.parse(fromBase64Url(payload));
-    if (!session?.expiresAt || Date.now() > session.expiresAt) return null;
+
+    if (
+      !session ||
+      typeof session !== 'object' ||
+      !['admin', 'user'].includes(session.type) ||
+      typeof session.id !== 'string' ||
+      !Number.isFinite(session.expiresAt) ||
+      Date.now() >= session.expiresAt
+    ) {
+      return null;
+    }
+
     return session;
   } catch (error) {
     return null;
   }
 };
 
-// ── Seed default admin ──────────────────────────────────────────────────────
-exports.seedDefaultAdmin = async () => {
-  const desiredUsername = 'hamed';
-  const desiredPassword = 'hamed$100';
+// ─────────────────────────────────────────────────────────────
+// Create Initial Admin
+// ─────────────────────────────────────────────────────────────
 
-  const existingDesired = await Admin.findOne({ username: desiredUsername });
-  if (!existingDesired) {
-    const admin = new Admin({ username: desiredUsername });
-    admin.setPassword(desiredPassword);
-    await admin.save();
-    console.log(`✅ Default admin created: username=${desiredUsername}, password=${desiredPassword}`);
+exports.seedDefaultAdmin = async () => {
+  const desiredUsername =
+    typeof process.env.ADMIN_USERNAME === 'string'
+      ? process.env.ADMIN_USERNAME.trim()
+      : '';
+
+  const desiredPassword =
+    typeof process.env.ADMIN_INITIAL_PASSWORD === 'string'
+      ? process.env.ADMIN_INITIAL_PASSWORD
+      : '';
+
+  if (!desiredUsername || !desiredPassword) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Admin bootstrap credentials are required.');
+    }
+
+    console.log('Admin bootstrap skipped: credentials not configured.');
+    return;
   }
+
+  if (desiredPassword.length < 12) {
+    throw new Error('ADMIN_INITIAL_PASSWORD must be at least 12 characters.');
+  }
+
+  const existingAdmin = await Admin.findOne({
+    username: desiredUsername
+  });
+
+  if (existingAdmin) {
+    console.log('Admin account already exists.');
+    return;
+  }
+
+  const admin = new Admin({
+    username: desiredUsername
+  });
+
+  await admin.setPassword(desiredPassword);
+  await admin.save();
+
+  console.log('Initial admin account created successfully.');
 };
